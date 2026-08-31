@@ -883,7 +883,18 @@ async function processTicket(t, i, resume = null, runner = null) {
 			const gated = await gateFixLoop(t, author, wt, aEnv, report, `${t.id}-${author}-merge`);
 			if (!gated.ok) { mergeBlocked = gated.reason; return; }
 			git(['push', '--force-with-lease', 'origin', branch], wt);
-			forge('merge', ['--pr', String(prNumber), '--do', 'rebase'], aEnv);
+			// Right after the force-push the forge is still recomputing mergeability and briefly
+			// answers the merge call with a transient "try again later" (Gitea 405/500, GitHub 405/
+			// 5xx/429). The branch is gate-green and approved, so retry with backoff before failing.
+			for (let attempt = 1; ; attempt++) {
+				try { forge('merge', ['--pr', String(prNumber), '--do', 'rebase'], aEnv); break; }
+				catch (e) {
+					const transient = /\b(405|429|5\d\d)\b|try again later/i.test(String(e.message));
+					if (!transient || attempt >= 5) throw e;
+					report('merging', `merge not ready yet (attempt ${attempt}/5); retrying`, { pr: prNumber });
+					await new Promise((r) => setTimeout(r, 3000 * attempt));
+				}
+			}
 			report('merged', `MERGED #${prNumber}`, { pr: prNumber });
 		});
 		if (mergeBlocked) return report('changes_requested', `approved, but the merge re-gate did not go green; PR #${prNumber} left open. ${mergeBlocked}`, { pr: prNumber, agentPid: null });
