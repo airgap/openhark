@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OPENHARK</title>
+<style>
+  :root {
+    --bg: #070a07; --panel: #0a0e0a; --edge: #1c3626; --edge2: #2b5a3c;
+    --fg: #9fe3b2; --bright: #7cf0a6; --dim: #4f7d60; --muted: #35573f;
+    --amber: #f0b429; --amber-bg: rgba(240,180,41,.14);
+    --red: #f2686a; --red-bg: rgba(242,104,106,.14);
+    --blue: #6cc6ff; --blue-bg: rgba(108,198,255,.12);
+    --sel: #7cf0a6; --seltext: #06130a; --hov: rgba(124,240,166,.10);
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.5 var(--mono); letter-spacing: .01em;
+    background-image: radial-gradient(rgba(124,240,166,.03) 1px, transparent 0);
+    background-size: 3px 3px; }
+  a { color: var(--bright); text-decoration: none; } a:hover { text-decoration: underline; }
+  ::selection { background: var(--sel); color: var(--seltext); }
+
+  .bar { display: flex; align-items: center; gap: 1.1rem; padding: .45rem .8rem;
+    border-bottom: 1px solid var(--edge); white-space: nowrap; overflow: hidden; }
+  .logo { background: var(--bright); color: var(--seltext); font-weight: 700;
+    padding: .1rem .5rem; letter-spacing: .18em; }
+  .bar .k { color: var(--dim); } .bar .v { color: var(--fg); }
+  .bar .run { color: var(--amber); }
+  .bar .sp { margin-left: auto; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--bright); vertical-align: middle; margin-right: .3rem; }
+  .dot.run { background: var(--bright); animation: blink 1.3s steps(2) infinite; }
+  .dot.idle { background: var(--muted); animation: none; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  .grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: .9rem;
+    padding: .9rem; align-items: start; height: calc(100vh - 34px); overflow: hidden; }
+  .col { display: flex; flex-direction: column; gap: .9rem; min-height: 0; height: 100%; }
+  .col.right { overflow: hidden; }
+
+  .panel { position: relative; border: 1px solid var(--edge); background: var(--panel);
+    padding: .95rem .8rem .7rem; min-height: 0; }
+  .panel > .lbl { position: absolute; top: -.66em; left: .7rem; background: var(--bg);
+    padding: 0 .45rem; color: var(--dim); font-size: 11px; letter-spacing: .12em; }
+  .panel > .lbl b { color: var(--fg); letter-spacing: .16em; }
+  .panel.grow { flex: 1; overflow: auto; }
+
+  .tab { cursor: pointer; color: var(--dim); padding: 0 .15rem; }
+  .tab:hover { color: var(--fg); }
+  .tab.on { color: var(--seltext); background: var(--bright); padding: 0 .35rem; }
+  .lbl .tab { font-size: 11px; }
+
+  /* launch form */
+  .frm { display: grid; grid-template-columns: auto 1fr; gap: .35rem .7rem; align-items: start; }
+  .frm label { color: var(--dim); text-align: right; padding-top: .18rem; }
+  .frm input, .frm textarea, .frm select {
+    font: inherit; color: var(--fg); background: #0c120c; border: 1px solid var(--edge);
+    padding: .2rem .4rem; width: 100%; }
+  .frm textarea { resize: vertical; min-height: 2.4rem; }
+  .frm input:focus, .frm textarea:focus, .frm select:focus { outline: none; border-color: var(--edge2); }
+  #jsonWrap textarea { width: 100%; min-height: 8rem; font: inherit; color: var(--fg);
+    background: #0c120c; border: 1px solid var(--edge); padding: .4rem; }
+  .ctl { display: flex; align-items: center; gap: .8rem; margin-top: .6rem; flex-wrap: wrap; }
+  .ctl label { color: var(--dim); display: inline-flex; gap: .3rem; align-items: center; }
+  .ctl input[type=number] { width: 3rem; font: inherit; background: #0c120c; color: var(--fg);
+    border: 1px solid var(--edge); padding: .1rem .3rem; }
+  .ctl select { font: inherit; background: #0c120c; color: var(--fg); border: 1px solid var(--edge); padding: .1rem .3rem; }
+  input[type=checkbox] { accent-color: var(--bright); }
+
+  .btn { cursor: pointer; color: var(--fg); background: transparent; border: 1px solid var(--edge2);
+    font: inherit; padding: .15rem .55rem; }
+  .btn:hover { background: var(--hov); border-color: var(--bright); color: var(--bright); }
+  .btn.prime { color: var(--seltext); background: var(--bright); border-color: var(--bright); font-weight: 700; }
+  .btn.prime:hover { background: #a6f7c3; }
+  .btn.ghost { border-color: var(--edge); color: var(--dim); }
+  .btn.ghost:hover { color: var(--fg); border-color: var(--edge2); background: var(--hov); }
+  .btn.danger { border-color: #5a2626; color: var(--red); }
+  .btn.danger:hover { background: var(--red-bg); border-color: var(--red); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .brack { color: var(--dim); cursor: pointer; }
+  .brack:hover { color: var(--bright); }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead th { text-align: left; color: var(--dim); font-weight: 400; font-size: 11px;
+    letter-spacing: .08em; padding: .2rem .4rem; border-bottom: 1px solid var(--edge); }
+  th.r, td.r { text-align: right; }
+  .prow td { padding: .28rem .4rem; border-bottom: 1px solid #0f1a11; cursor: pointer; vertical-align: middle; }
+  .prow:hover td { background: var(--hov); }
+  .prow.sel td { background: var(--sel); color: var(--seltext); }
+  .prow.sel .stag, .prow.sel .k, .prow.sel a { color: var(--seltext); }
+  .id { color: var(--bright); font-weight: 700; }
+  .prow.sel .id { color: var(--seltext); }
+  .ttl { color: var(--fg); } .prow.sel .ttl { color: var(--seltext); }
+  .who { color: var(--dim); white-space: nowrap; } .prow.sel .who { color: #14301c; }
+  .sub td { border-bottom: 1px solid #0f1a11; padding: 0 .4rem .28rem 1.4rem; }
+  .sub .rsn { color: var(--red); font-size: 12px; }
+
+  .stag { font-size: 11px; letter-spacing: .04em; white-space: nowrap; }
+  .st-run { color: var(--amber); } .st-ok { color: var(--bright); }
+  .st-bad { color: var(--red); } .st-dim { color: var(--dim); } .st-blue { color: var(--blue); }
+
+  .prog { letter-spacing: -1px; white-space: nowrap; }
+  .prog .f { color: var(--bright); } .prog .c { color: var(--amber); } .prog .e { color: var(--muted); }
+  .prog.bad .f { color: var(--red); }
+  .elapsed { color: var(--dim); }
+
+  .empty { color: var(--muted); padding: .6rem .2rem; }
+  .muted { color: var(--muted); }
+
+  /* detail pane */
+  .detail { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+  .dhead { display: flex; align-items: baseline; gap: .6rem; }
+  .dhead .id { font-size: 15px; }
+  .dhead .kill { margin-left: auto; }
+  .dhead .dact { margin-left: auto; }
+  .dttl { color: var(--fg); margin: .35rem 0 .55rem; }
+  .dtabs { display: flex; gap: .1rem; border-bottom: 1px solid var(--edge); margin-bottom: .6rem; }
+  .dtab { cursor: pointer; padding: .15rem .6rem; color: var(--dim); }
+  .dtab:hover { color: var(--fg); background: var(--hov); }
+  .dtab.on { color: var(--seltext); background: var(--bright); }
+  .dbody { overflow: auto; flex: 1; min-height: 0; }
+  .sec { color: var(--dim); font-size: 11px; letter-spacing: .12em; margin: .1rem 0 .3rem;
+    border-bottom: 1px dotted var(--edge); padding-bottom: .15rem; }
+  .sec:not(:first-child) { margin-top: 1rem; }
+  pre.body { white-space: pre-wrap; word-break: break-word; margin: 0; color: var(--fg); }
+  pre.log { white-space: pre-wrap; word-break: break-word; margin: 0; color: var(--fg);
+    font-size: 12px; background: #060906; border: 1px solid var(--edge); padding: .5rem; max-height: 100%; }
+  /* rendered markdown (agent logs, prompts) */
+  .md { color: var(--fg); word-break: break-word; line-height: 1.45; }
+  .md.log { font-size: 12px; background: #060906; border: 1px solid var(--edge); padding: .5rem; max-height: 100%; overflow: auto; }
+  .md h1,.md h2,.md h3,.md h4,.md h5,.md h6 { color: var(--bright); margin: .7rem 0 .3rem; line-height: 1.2; }
+  .md h1 { font-size: 15px; } .md h2 { font-size: 14px; } .md h3 { font-size: 13px; }
+  .md h4,.md h5,.md h6 { font-size: 12px; color: var(--amber); }
+  .md ul { margin: .3rem 0; padding-left: 1.2rem; } .md li { margin: .1rem 0; }
+  .md code { background: var(--hov); border: 1px solid var(--edge); border-radius: 3px; padding: 0 .25rem; color: var(--amber); }
+  .md pre.code { background: #030503; border: 1px solid var(--edge); border-radius: 3px; padding: .45rem .6rem;
+    margin: .4rem 0; overflow-x: auto; white-space: pre; }
+  .md pre.code code { background: none; border: 0; padding: 0; color: var(--fg); }
+  .md a { color: var(--bright); } .md a:hover { color: var(--amber); }
+  .md blockquote { border-left: 2px solid var(--edge); margin: .3rem 0; padding-left: .6rem; color: var(--dim); }
+  .md hr { border: 0; border-top: 1px solid var(--edge); margin: .6rem 0; }
+  .md b { color: var(--bright); }
+  /* event timeline */
+  .tlwrap { max-height: 100%; overflow: auto; font-size: 12px; }
+  .tl { display: flex; gap: .5rem; padding: .14rem 0; border-bottom: 1px dotted var(--edge); align-items: baseline; }
+  .tlt { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tls { white-space: nowrap; font-size: 11px; }
+  .tld { color: var(--fg); word-break: break-word; }
+  .chk div { padding: .12rem 0; }
+  .chk .m { display: inline-block; width: 1.3rem; }
+  .chk .done .m { color: var(--bright); } .chk .now .m { color: var(--amber); }
+  .chk .todo { color: var(--muted); } .chk .now { color: var(--amber); } .chk .done { color: var(--fg); }
+  .chk .tm { color: var(--dim); margin-left: .5rem; font-size: 12px; }
+  .kv { color: var(--fg); } .kv b { color: var(--bright); } .kv .k { color: var(--dim); }
+
+  /* login overlay */
+  .veil { position: fixed; inset: 0; background: rgba(4,7,4,.9); display: grid; place-items: center; z-index: 9; }
+  .card { border: 1px solid var(--edge2); background: var(--panel); padding: 1.2rem 1.6rem; text-align: center; }
+  .card h2 { margin: 0 0 .6rem; color: var(--bright); letter-spacing: .1em; font-weight: 700; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--edge2); }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar"><span class="logo">OPENHARK</span><span class="k">connecting</span></div>
+
+<div class="grid">
+  <div class="col">
+    <section class="panel">
+      <span class="lbl"><b>LAUNCH</b> <span class="tab on" id="tabForm" onclick="setLaunch('form')">[form]</span> <span class="tab" id="tabJson" onclick="setLaunch('json')">[json]</span> <span class="tab" id="tabBacklog" onclick="setLaunch('backlog')">[backlog]</span></span>
+      <div id="formWrap">
+        <div class="frm">
+          <label>id:</label><input id="f_id" placeholder="PROJ-123" spellcheck="false" />
+          <label>title:</label><input id="f_title" placeholder="short title" spellcheck="false" />
+          <label>scope:</label><input id="f_scope" placeholder="path/to/area" spellcheck="false" />
+          <label>prompt:</label><textarea id="f_prompt" placeholder="what to do"></textarea>
+        </div>
+      </div>
+      <div id="jsonWrap" style="display:none"><textarea id="f_json" spellcheck="false">[
+  { "id": "", "title": "", "scope": "", "prompt": "" }
+]</textarea></div>
+      <div id="backlogWrap" style="display:none">
+        <div id="backlogList" style="max-height:15rem;overflow:auto;border:1px solid var(--line);padding:.3rem"><div class="empty">loading open tickets</div></div>
+        <div style="margin-top:.4rem"><button class="btn ghost" id="backlogRefresh">[ refresh ]</button> <button class="btn ghost" id="backlogPick">[ check disjoint (fable) ]</button> <span class="muted" id="backlogInfo"></span></div>
+      </div>
+      <div class="ctl">
+        <label>mode
+          <select id="mode"><option value="dry">dry</option><option value="sim">sim</option><option value="go">go</option></select>
+        </label>
+        <label><input type="checkbox" id="nomerge" /> no-merge</label>
+        <label>max <input type="number" id="max" value="3" min="1" max="16" /></label>
+        <span style="margin-left:auto"></span>
+        <span class="btn ghost" id="autoToggle" title="Auto-launch disjoint batches until the backlog empties (opt-in daemon)">auto: off</span>
+        <button class="btn ghost" id="suggest">[ suggest batch ]</button>
+        <button class="btn prime" id="launch">LAUNCH &#9656;</button>
+      </div>
+      <div class="muted" id="launchmsg" style="margin-top:.35rem;min-height:1em"></div>
+    </section>
+
+    <section class="panel grow">
+      <span class="lbl"><b>PIPELINE</b> <span id="pipeCount" class="muted"></span></span>
+      <div id="pipe"><div class="empty">no active run</div></div>
+    </section>
+
+    <section class="panel">
+      <span class="lbl"><b>RUNS</b> <span class="muted">this host</span></span>
+      <div id="runs"><div class="empty">loading</div></div>
+    </section>
+  </div>
+
+  <div class="col right">
+    <section class="panel detail">
+      <span class="lbl"><b>DETAIL</b></span>
+      <div id="detail" class="dbody"><div class="empty">select a ticket on the left</div></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const STAGES = ['queued','worktree','editing','committing','gating','fixing','pr_open','reviewing','approved','merging','merged'];
+const STAGE_LABEL = { queued:'QUEUED', worktree:'WORKTREE', editing:'EDITING', committing:'COMMIT',
+  gating:'TESTS', fixing:'FIXING', pr_open:'PR OPEN', reviewing:'REVIEW', approved:'APPROVED',
+  merging:'MERGING', merged:'MERGED', changes_requested:'CHANGES', failed:'FAILED', skipped:'SKIPPED', start:'START' };
+const stageClass = (s) => s==='merged'||s==='approved' ? 'st-ok' : s==='failed'||s==='skipped'||s==='changes_requested' ? 'st-bad'
+  : s==='reviewing'||s==='pr_open' ? 'st-blue' : s==='queued' ? 'st-dim' : 'st-run';
+// 5 checklist groups the detail pane shows.
+const GROUPS = [['queued','worktree','start'],['editing','committing'],['gating','fixing'],['pr_open','reviewing','changes_requested'],['approved','merging','merged']];
+const GROUP_NAMES = ['queue','develop','test','blocking review','merge'];
+const groupOf = (s) => { for (let i=0;i<GROUPS.length;i++) if (GROUPS[i].includes(s)) return i; return 0; };
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Minimal, XSS-safe markdown. Escape FIRST, so any raw HTML in agent output is inert,
+// then apply formatting that only emits a known set of tags. Placeholders use a @@@
+// sentinel: no control chars (those got stripped last time) and unlikely in real text.
+function md(src){
+  let s = esc(String(src ?? ''));
+  const blk=[]; s = s.replace(/```[a-zA-Z0-9_+-]*\n?([\s\S]*?)```/g,(m,c)=>{blk.push(c.replace(/\n+$/,''));return '@@@B'+(blk.length-1)+'@@@';});
+  const inl=[]; s = s.replace(/`([^`\n]+)`/g,(m,c)=>{inl.push(c);return '@@@I'+(inl.length-1)+'@@@';});
+  s = s.replace(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/gm,(m,h,t)=>'<h'+h.length+'>'+t+'</h'+h.length+'>');
+  s = s.replace(/^\s*(?:---|\*\*\*|___)\s*$/gm,'<hr>');
+  s = s.replace(/^\s{0,3}&gt;\s?(.*)$/gm,'<blockquote>$1</blockquote>');
+  s = s.replace(/^\s*(?:[-*+]|\d+\.)\s+(.+)$/gm,'@@@LI@@@<li>$1</li>');
+  s = s.replace(/(?:@@@LI@@@<li>[\s\S]*?<\/li>\n?)+/g,m=>'<ul>'+m.replace(/@@@LI@@@/g,'').replace(/\n/g,'')+'</ul>');
+  s = s.replace(/\*\*([^\n]+?)\*\*/g,'<b>$1</b>').replace(/__([^\n]+?)__/g,'<b>$1</b>');
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/\n/g,'<br>');
+  s = s.replace(/(<\/(?:h[1-6]|blockquote|ul|ol)>|<hr>)<br>/g,'$1');
+  s = s.replace(/@@@I(\d+)@@@/g,(m,i)=>'<code>'+inl[+i]+'</code>');
+  s = s.replace(/(?:<br>)?(@@@B\d+@@@)(?:<br>)?/g,'$1');
+  s = s.replace(/@@@B(\d+)@@@/g,(m,i)=>'<pre class="code"><code>'+blk[+i]+'</code></pre>');
+  return s;
+}
+const clock = () => new Date().toLocaleTimeString('en-GB');
+const fmtDur = (s) => { s=Math.max(0,Math.floor(s)); const h=Math.floor(s/3600); s-=h*3600; const m=Math.floor(s/60); s-=m*60; return h?`${h}h${String(m).padStart(2,'0')}`:`${m}m${String(s).padStart(2,'0')}`; };
+const since = (ms) => ms ? fmtDur((Date.now()-ms)/1000) : '';
+const dur = (ms) => ms>0 ? fmtDur(ms/1000) : '0m00';
+// A ticket's elapsed time: live while it works, frozen at its final duration once it
+// settles (approved/merged/changes/failed/skipped) instead of ticking on forever.
+const TICKET_SETTLED = ['approved','merged','changes_requested','failed','skipped'];
+const elapsedOf = (t) => !t.started ? elapsedOf(t) : dur((TICKET_SETTLED.includes(t.stage) ? (t.updated||t.started) : Date.now()) - t.started);
+
+let TOKEN=''; try { TOKEN = localStorage.getItem('swarmToken')||''; } catch {}
+{ const q=new URLSearchParams(location.search); if (q.get('token')) { TOKEN=q.get('token'); try{localStorage.setItem('swarmToken',TOKEN);}catch{} history.replaceState(null,'',location.pathname); } }
+async function api(path, opts={}) {
+  const r = await fetch(path, TOKEN ? {...opts, headers:{...(opts.headers||{}),'x-swarm-token':TOKEN}} : opts);
+  if (r.status===401) { const e=new Error('login-required'); e.login=true; throw e; }
+  const j = await r.json().catch(()=>({})); if (!r.ok) throw new Error(j.error||r.statusText); return j;
+}
+window.useToken = () => { const t=prompt('Break-glass DASH_TOKEN:'); if (t){TOKEN=t; try{localStorage.setItem('swarmToken',TOKEN);}catch{} veil(false); refresh();} };
+function flash(m,bad){ const el=document.getElementById('launchmsg'); el.textContent=m; el.style.color=bad?'var(--red)':'var(--dim)'; setTimeout(()=>{el.textContent='';},6000); }
+
+let BASE='', REPO='', KILLABLE=[], OPEN_PRS=new Set(), SEL=null, DTAB='prompt', RUN=null, SPECS={};
+
+function veil(on){ let v=document.getElementById('veil'); if(!on){ if(v)v.remove(); return; }
+  if(v) return; v=document.createElement('div'); v.id='veil'; v.className='veil';
+  v.innerHTML='<div class="card"><h2>OPENHARK</h2><div class="muted">enter the dashboard token</div><div style="margin-top:.8rem;display:flex;gap:.6rem;justify-content:center"><span class="btn prime" onclick="useToken()">use token</span></div></div>';
+  document.body.appendChild(v);
+}
+
+// launch tabs
+window.setLaunch = (m) => {
+  document.getElementById('formWrap').style.display = m === 'form' ? '' : 'none';
+  document.getElementById('jsonWrap').style.display = m === 'json' ? '' : 'none';
+  document.getElementById('backlogWrap').style.display = m === 'backlog' ? '' : 'none';
+  document.getElementById('tabForm').classList.toggle('on', m === 'form');
+  document.getElementById('tabJson').classList.toggle('on', m === 'json');
+  document.getElementById('tabBacklog').classList.toggle('on', m === 'backlog');
+  LMODE = m;
+  if (m === 'backlog' && !BACKLOG.length) loadBacklog();
+};
+let LMODE = 'form', BACKLOG = [], AUTO = { on: false };
+function launchTickets() {
+  if (LMODE === 'json') return JSON.parse(document.getElementById('f_json').value);
+  if (LMODE === 'backlog') {
+    const picked = [...document.querySelectorAll('#backlogList input:checked')].map((c) => BACKLOG.find((t) => t.id === c.value)).filter(Boolean);
+    if (!picked.length) throw new Error('no tickets checked');
+    return picked.map((t) => ({ id: t.id, title: t.title, scope: t.scope || '', prompt: `Read ticket ${t.id} (${t.title}) in the tracker and implement it, strictly within ${t.scope || 'the relevant files'}.` }));
+  }
+  const t = { id: document.getElementById('f_id').value.trim(), title: document.getElementById('f_title').value.trim(), scope: document.getElementById('f_scope').value.trim(), prompt: document.getElementById('f_prompt').value.trim() };
+  if (!t.id) throw new Error('id required');
+  return [t];
+}
+async function loadBacklog(refresh) {
+  const el = document.getElementById('backlogList');
+  el.innerHTML = '<div class="empty">listing open tickets with fable, this can take a minute</div>';
+  try {
+    const j = await api('/api/backlog' + (refresh ? '?refresh=1' : ''));
+    BACKLOG = j.tickets || [];
+    renderBacklog();
+    document.getElementById('backlogInfo').textContent = `${BACKLOG.length} open`;
+  } catch (e) { el.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+function renderBacklog() {
+  const el = document.getElementById('backlogList');
+  if (!BACKLOG.length) { el.innerHTML = '<div class="empty">no open tickets</div>'; return; }
+  el.innerHTML = BACKLOG.map((t) => `<label style="display:flex;gap:.4rem;padding:.12rem 0;cursor:pointer;align-items:baseline"><input type="checkbox" value="${esc(t.id)}"><span class="key">${esc(t.id)}</span><span class="ttl">${esc((t.title || '').slice(0, 40))}</span><span class="muted" style="margin-left:auto">${esc(t.scope || '')}</span></label>`).join('');
+}
+async function pickDisjoint() {
+  const info = document.getElementById('backlogInfo'); info.textContent = 'fable picking disjoint...';
+  try {
+    const j = await api('/api/suggest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ max: Number(document.getElementById('max').value) || 4 }) });
+    const ids = new Set((j.tickets || []).map((t) => t.id));
+    document.querySelectorAll('#backlogList input').forEach((c) => (c.checked = ids.has(c.value)));
+    info.textContent = `checked ${ids.size} disjoint`;
+  } catch (e) { info.textContent = 'error: ' + e.message; }
+}
+function renderAuto() { const b = document.getElementById('autoToggle'); b.textContent = 'auto: ' + (AUTO.on ? 'ON' : 'off'); b.classList.toggle('prime', AUTO.on); b.classList.toggle('ghost', !AUTO.on); }
+async function toggleAuto() {
+  const on = !AUTO.on, mode = document.getElementById('mode').value;
+  if (on && !confirm(`Turn ON the autobatch daemon in ${mode} mode? It keeps launching disjoint batches until the backlog empties or you turn it off` + (mode === 'go' ? ', auto-merging to main.' : '.'))) return;
+  try {
+    const j = await api('/api/autobatch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on, mode, max: Number(document.getElementById('max').value) }) });
+    AUTO = j; renderAuto(); flash('autobatch ' + (j.on ? 'ON (' + j.mode + ')' : 'off'));
+  } catch (e) { flash('autobatch: ' + e.message, true); }
+}
+document.getElementById('backlogRefresh').onclick = () => loadBacklog(true);
+document.getElementById('backlogPick').onclick = pickDisjoint;
+document.getElementById('autoToggle').onclick = toggleAuto;
+
+async function act(btn, busy, path, body, confirmMsg, ok){
+  if (confirmMsg && !confirm(confirmMsg)) return;
+  const label = btn && btn.textContent; if (btn){ btn.disabled=true; btn.textContent=busy; }
+  try { await api(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}); flash(ok); }
+  catch(e){ flash(e.login?'sign in first':'error: '+e.message,true); if(btn){btn.disabled=false;btn.textContent=label;} }
+  refresh();
+}
+window.killAgent=(pid,id,btn)=>act(btn,'killing...','/api/kill',{pid},`Kill the agent (pid ${pid}) on ${id}?`,`killed agent on ${id}`);
+window.mergePr=(pr,btn)=>act(btn,'merging...','/api/pr/merge',{pr,do:'rebase'},`Merge PR #${pr} into main?`,`merged PR #${pr}`);
+window.retryTicket=(id,btn)=>act(btn,'retrying...','/api/retry',{id},`Re-run ${id} as a fresh single-ticket run?`,`re-launched ${id}`);
+
+document.getElementById('launch').onclick = () => {
+  let tickets; try { tickets = launchTickets(); } catch(e){ return flash('bad tickets: '+e.message,true); }
+  const mode=document.getElementById('mode').value;
+  const body={ tickets, sim:mode==='sim', go:mode==='go', noMerge:document.getElementById('nomerge').checked, max:Number(document.getElementById('max').value) };
+  const warn = mode==='go' ? 'Launch a LIVE run with real agents?' : mode==='sim' ? 'Launch a sim run?' : null;
+  act(document.getElementById('launch'),'launching...','/api/run',body,warn,'run launched');
+};
+document.getElementById('suggest').onclick = async () => {
+  const b=document.getElementById('suggest'); b.disabled=true; const l=b.textContent; b.textContent='[ planning with fable... ]';
+  try { const j=await api('/api/suggest',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({max:Number(document.getElementById('max').value)||4})});
+    setLaunch('json'); document.getElementById('f_json').value=JSON.stringify(j.tickets,null,2); flash(`fable picked ${j.tickets.length} disjoint ticket(s)`); }
+  catch(e){ flash(e.login?'sign in first':'suggest failed: '+e.message,true); }
+  finally { b.disabled=false; b.textContent=l; }
+};
+
+function progress(stage){
+  const bad = stage==='failed'||stage==='skipped'||stage==='changes_requested';
+  const idx = STAGES.indexOf(stage); const n=8; const filled = idx<0 ? (bad?2:0) : Math.round(((idx+1)/STAGES.length)*n);
+  let h=''; for(let i=0;i<n;i++){ h += i<filled-1 ? '<span class="f">&#9608;</span>' : i===filled-1 ? `<span class="${bad?'f':'c'}">&#9608;</span>` : '<span class="e">&#9617;</span>'; }
+  return `<span class="prog ${bad?'bad':''}">${h}</span>`;
+}
+function pipeRow(t){
+  const stg = STAGE_LABEL[t.stage]||t.stage;
+  const failed = t.stage==='failed'||t.stage==='skipped';
+  const main = `<tr class="prow ${SEL===t.id?'sel':''}" onclick="select('${esc(t.id)}')">
+    <td class="id">${esc(t.id)}</td>
+    <td class="ttl">${esc((t.title||'').slice(0,42))}${(t.title||'').length>42?'&#8230;':''}</td>
+    <td class="who">${esc(t.author||'?')}&#8594;${esc(t.reviewer||'?')}</td>
+    <td><span class="stag ${stageClass(t.stage)}">[${esc(stg)}]</span></td>
+    <td>${progress(t.stage)} <span class="elapsed">${elapsedOf(t)}</span></td></tr>`;
+  const sub = failed && t.detail ? `<tr class="sub" onclick="select('${esc(t.id)}')"><td colspan="5"><span class="rsn">&#8627; ${esc(t.detail.slice(0,90))}</span> <span class="brack" onclick="event.stopPropagation();retryTicket('${esc(t.id)}',this)">[retry]</span></td></tr>` : '';
+  return main+sub;
+}
+function renderPipe(run){
+  const el=document.getElementById('pipe'); const c=document.getElementById('pipeCount');
+  if (!run||!run.tickets||!run.tickets.length){ el.innerHTML='<div class="empty">no active run</div>'; c.textContent=''; return; }
+  c.textContent = `${run.tickets.length} tickets`;
+  el.innerHTML = `<table><thead><tr><th>ID</th><th>TITLE</th><th>AUTHOR&#8594;REVIEW</th><th>STAGE</th><th>PROGRESS &nbsp; ELAPSED</th></tr></thead><tbody>${run.tickets.map(pipeRow).join('')}</tbody></table>`
+    + (Array.isArray(PRS)&&!PRS.length ? '<div class="muted" style="padding:.4rem .2rem">no open PRs</div>' : '');
+}
+function renderRuns(runs){
+  const el=document.getElementById('runs');
+  if(!runs||!runs.length){ el.innerHTML='<div class="empty">no runs yet</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>RUN</th><th>STARTED</th><th class="r">TKT</th><th class="r">MRG</th><th class="r">FAIL</th><th>STATUS</th></tr></thead><tbody>`
+    + runs.map(r=>`<tr class="prow"><td class="id">${esc(r.runId)}</td><td class="who">${r.started?new Date(r.started).toLocaleTimeString('en-GB'):'?'}</td><td class="r">${r.tickets}</td><td class="r">${r.merged}</td><td class="r ${r.failed?'st-bad':''}">${r.failed}</td><td class="${r.running?'st-run':'st-dim'}">${r.running?'running':'complete'}</td></tr>`).join('')
+    + `</tbody></table>`;
+}
+
+// A ticket in an active stage opens straight on its live log; a settled one on the
+// prompt/stages view.
+const SETTLED = ['queued','start','approved','merged','changes_requested','failed','skipped'];
+const isLive = (t) => !!(t && t.stage && !SETTLED.includes(t.stage));
+window.select = (id) => { SEL=id; const t=RUN&&RUN.tickets?RUN.tickets.find(x=>x.id===id):null; DTAB = isLive(t) ? 'log' : 'prompt'; if(!SPECS[id]) fetchSpec(id); if(DTAB==='log') fetchLog(id); renderDetail(); };
+window.setDTab = (t) => { DTAB=t; if(t==='log') fetchLog(SEL); if(t==='timeline') fetchEvents(SEL); renderDetail(); };
+async function fetchSpec(id){ try { const j=await api('/api/ticket?id='+encodeURIComponent(id)); SPECS[id]=j.spec||{}; renderDetail(); } catch {} }
+let LOGS={}; async function fetchLog(id){ if(!id) return; try { const j=await api('/api/log?ticket='+encodeURIComponent(id)); LOGS[id]=j.log||'(no log captured yet)'; renderDetail(); } catch(e){ LOGS[id]='(log unavailable)'; } }
+let EVENTS={}; async function fetchEvents(id){ if(!id) return; try { const j=await api('/api/events?ticket='+encodeURIComponent(id)); EVENTS[id]=j.events||[]; renderDetail(); } catch(e){ EVENTS[id]=[]; } }
+const hms = (ts) => ts ? new Date(ts).toLocaleTimeString('en-GB') : '';
+
+function renderDetail(){
+  const el=document.getElementById('detail');
+  const t = RUN && RUN.tickets ? RUN.tickets.find(x=>x.id===SEL) : null;
+  if (!t){ el.innerHTML='<div class="empty">select a ticket on the left</div>'; return; }
+  const spec = SPECS[t.id]||{};
+  const stg = STAGE_LABEL[t.stage]||t.stage;
+  const kill = (t.stage==='editing'||t.stage==='reviewing'||t.stage==='fixing'||t.stage==='gating') && t.agentPid
+    ? `<span class="kill brack st-bad" onclick="killAgent(${t.agentPid},'${esc(t.id)}',this)">[x kill]</span>` : '';
+  // Whatever action this stage affords, in the header so it is always visible: merge
+  // an approved+open PR, or retry a stalled/rejected ticket.
+  const action = t.stage==='approved' && t.pr && OPEN_PRS.has(t.pr)
+    ? `<span class="btn prime dact" onclick="mergePr(${t.pr},this)">merge PR #${t.pr} &#9656;</span>`
+    : (t.stage==='changes_requested'||t.stage==='failed'||t.stage==='skipped')
+    ? `<span class="btn ghost dact" onclick="retryTicket('${esc(t.id)}',this)">retry ${esc(t.id)}</span>`
+    : (t.stage==='approved'||t.stage==='merged') && t.pr ? `<span class="st-ok dact">merged</span>` : '';
+  const cur = t.stage==='merged' ? GROUPS.length : groupOf(t.stage); const bad = t.stage==='failed'||t.stage==='skipped';
+  const chk = GROUP_NAMES.map((name,i)=>{ const cls = bad&&i>=cur?'todo' : i<cur?'done' : i===cur?'now':'todo';
+    const m = cls==='done'?'&#10003;' : cls==='now'?'&#9656;' : '&#183;'; return `<div class="${cls}"><span class="m">${m}</span>${name}</div>`; }).join('');
+  let tabBody='';
+  if (DTAB==='prompt') tabBody = `<div class="sec">PROMPT</div><div class="md">${md(spec.prompt||'(loading)')}</div><div class="sec">SCOPE</div><pre class="body">${esc(spec.scope||t.scope||'')}</pre><div class="sec">STAGES</div><div class="chk">${chk}</div>`;
+  else if (DTAB==='diff') tabBody = t.pr ? `<div class="sec">DIFF</div><div>PR <a href="${BASE}/${REPO}/pulls/${t.pr}" target="_blank" rel="noopener">#${t.pr}</a> ${OPEN_PRS.has(t.pr)?'<span class="btn ghost" onclick="mergePr('+t.pr+',this)">merge</span>':'<span class="st-ok">merged</span>'}</div>` : `<div class="empty">no PR yet, the diff appears once the branch is pushed</div>`;
+  else if (DTAB==='timeline') tabBody = `<div class="sec">TIMELINE</div><div class="tlwrap">${((EVENTS[t.id]||[]).map(e=>`<div class="tl"><span class="tlt">${hms(e.ts)}</span> <span class="tls ${stageClass(e.stage)}">${esc(STAGE_LABEL[e.stage]||e.stage||'')}</span> <span class="tld">${esc(e.detail||'')}</span></div>`).join('')||'<div class="empty">no events yet</div>')}</div>`;
+  else tabBody = `<div class="sec">AGENT LOG</div><div class="md log">${md(LOGS[t.id]||'(loading)')}</div>`;
+  el.innerHTML = `<div class="dhead"><span class="id">${esc(t.id)}</span> <span class="stag ${stageClass(t.stage)}">[${esc(stg)}]</span> <span class="who">${esc(t.author||'?')}&#8594;${esc(t.reviewer||'?')}</span> ${kill}${action}</div>
+    <div class="dttl">${esc(t.title||'')}</div>
+    <div class="dtabs"><span class="dtab ${DTAB==='prompt'?'on':''}" onclick="setDTab('prompt')">prompt</span><span class="dtab ${DTAB==='timeline'?'on':''}" onclick="setDTab('timeline')">timeline</span><span class="dtab ${DTAB==='log'?'on':''}" onclick="setDTab('log')">log</span><span class="dtab ${DTAB==='diff'?'on':''}" onclick="setDTab('diff')">diff</span></div>
+    <div class="dbody">${tabBody}
+      <div class="sec">AGENT</div><div class="kv"><span class="k">stage</span> <b>${esc(stg)}</b> &nbsp; <span class="k">pid</span> ${t.agentPid||'&#8212;'.replace('&#8212;','-')} &nbsp; <span class="k">elapsed</span> ${elapsedOf(t)||'-'}</div></div>`;
+  if (DTAB==='log'){ const p=el.querySelector('.md.log'); if(p) p.scrollTop=p.scrollHeight; } // keep newest output in view
+  if (DTAB==='timeline'){ const p=el.querySelector('.tlwrap'); if(p) p.scrollTop=p.scrollHeight; }
+}
+
+function renderBar(run, me){
+  const el=document.getElementById('bar');
+  const autoTag = AUTO.on ? `<span class="st-run" title="${esc(AUTO.msg||'')}">◆ auto:${esc(AUTO.mode)}</span>` : '';
+  if (!run){ el.innerHTML = `<span class="logo">OPENHARK</span><span class="k">no active run</span>${autoTag}<span class="sp v">${esc(me||'')}</span><span class="v">${clock()}</span>`; return; }
+  const active = !run.done && run.tickets.some(t=>!['merged','failed','skipped','changes_requested','queued'].includes(t.stage));
+  const merged = run.tickets.filter(t=>t.stage==='merged').length;
+  const failed = run.tickets.filter(t=>t.stage==='failed'||t.stage==='skipped').length;
+  const agents = run.tickets.filter(t=>t.agentPid).length;
+  el.innerHTML = `<span class="logo">OPENHARK</span>`
+    + `<span><span class="k">run:</span><span class="v">${esc(run.runId)}</span></span>`
+    + `<span><span class="dot ${active?'run':'idle'}"></span><span class="run">${active?'RUNNING':(run.done?'DONE':'IDLE')}</span></span>`
+    + `<span><span class="k">up:</span><span class="v">${run.done ? dur(run.tickets.reduce((mx,t)=>Math.max(mx,t.updated||0),run.startedAt)-run.startedAt) : since(run.startedAt)}</span></span>`
+    + `<span class="k">agents:<span class="v">${agents}</span> failed:<span class="${failed?'st-bad':'v'}">${failed}</span> merged:<span class="st-ok">${merged}</span> mode:<span class="v">${esc(run.mode)}</span></span>`
+    + autoTag
+    + `<span class="sp v">${esc(me||'')}</span><span class="v">${clock()}</span>`;
+}
+
+let PRS=[], ME='';
+async function refresh(){
+  try {
+    const s = await api('/api/state');
+    BASE=s.base; REPO=s.repo; KILLABLE=s.killable||[]; PRS=Array.isArray(s.prs)?s.prs:[]; OPEN_PRS=new Set(PRS.map(p=>p.number)); RUN=s.run;
+    if (s.autobatch) { AUTO = s.autobatch; renderAuto(); }
+    veil(false);
+    try { const a=await (await fetch('/auth/me')).json(); ME = a.authenticated ? 'openhark' : ''; } catch {}
+    if (RUN && RUN.tickets && RUN.tickets.length && !SEL) select(RUN.tickets[0].id);
+    else if (SEL && DTAB==='log') fetchLog(SEL); // stream the log live while it is open
+    else if (SEL && DTAB==='timeline') fetchEvents(SEL); // refresh the timeline live
+    renderBar(RUN, ME); renderPipe(RUN); renderDetail();
+  } catch(e){ if (e.login){ veil(true); document.getElementById('bar').innerHTML='<span class="logo">OPENHARK</span><span class="k">not signed in</span>'; } else { document.getElementById('bar').innerHTML=`<span class="logo">OPENHARK</span><span class="st-bad">offline: ${esc(e.message)}</span>`; } }
+}
+async function refreshRuns(){ try { const j=await api('/api/runs'); renderRuns(j.runs); } catch {} }
+refresh(); refreshRuns();
+setInterval(refresh, 1500);
+setInterval(refreshRuns, 8000);
+setInterval(()=>{ if (RUN) renderBar(RUN, ME); }, 1000);
+</script>
+</body>
+</html>

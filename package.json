@@ -1,0 +1,21 @@
+{
+  "name": "openhark",
+  "version": "0.1.0",
+  "description": "Heterogeneous multi-agent coding swarm: worktree-isolated agents author on branches, cross-review each other's PRs, and merge behind a gate. TUI + web dashboard + MCP.",
+  "type": "module",
+  "engines": { "node": ">=22.5" },
+  "bin": {
+    "openhark": "bin/tui/index.mjs",
+    "openhark-serve": "bin/dashboard.mjs"
+  },
+  "scripts": {
+    "serve": "node bin/dashboard.mjs",
+    "tui": "node bin/tui/index.mjs",
+    "mcp": "node bin/mcp.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "neo-blessed": "^0.2.0",
+    "zod": "^4.3.6"
+  }
+}
