@@ -348,9 +348,14 @@ function forge(sub, flags, env) {
 	const out = execFileSync('node', [FORGE, sub, ...flags], { cwd: ROOT, encoding: 'utf8', env, maxBuffer: MAXBUF });
 	return JSON.parse(out);
 }
-// Reset any lockfile a fresh install touched, so its churn is never committed by an agent.
+// Reset any lockfile a fresh install touched, so its churn is never committed by an agent. But a
+// DELIBERATE dependency change (the branch edited a package.json) must keep its lockfile, or the
+// build re-breaks and a frozen install fails. So only strip lockfiles when no package.json differs.
 const LOCKFILES = ['bun.lock', 'bun.lockb', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'];
 function resetLockfiles(wt) {
+	try {
+		if (git(['diff', '--name-only', 'origin/main'], wt).split('\n').some((f) => f.endsWith('package.json'))) return;
+	} catch {}
 	for (const f of LOCKFILES) if (existsSync(join(wt, f))) { try { git(['checkout', '--', f], wt); } catch {} }
 }
 // Agents run with cwd set to their worktree, but they have bypass permissions and sometimes edit the
@@ -360,10 +365,12 @@ function resetLockfiles(wt) {
 // there after an agent runs is a leak: revert it and warn. Untracked leaks are left (they
 // block nothing and cleaning them is riskier).
 function revertMainLeak(tag) {
-	let dirty = '';
-	try { dirty = git(['status', '--porcelain', '--untracked-files=no'], ROOT); } catch { return; }
-	if (!dirty.trim()) return;
-	const files = dirty.trim().split('\n').map((l) => l.slice(3).trim()).filter(Boolean);
+	// git() trims its output, so porcelain status columns cannot be sliced reliably (a leading space
+	// on the first line is gone, which drops a char from the first path). diff --name-only gives bare
+	// paths; against HEAD it stays tracked-only, matching --untracked-files=no.
+	let files = [];
+	try { files = git(['diff', '--name-only', 'HEAD'], ROOT).split('\n').map((s) => s.trim()).filter(Boolean); } catch { return; }
+	if (!files.length) return;
 	try { git(['checkout', '--', ...files], ROOT); } catch {}
 	console.error(`WARN: ${tag} leaked edits into the main checkout; reverted ${files.join(', ')}`);
 }
