@@ -352,7 +352,8 @@ function stampRowShimmer() {
 	const p = (SHIMMER * 4) % (2 * inner); // 4 cells/tick
 	const center = p <= inner ? p : 2 * inner - p; // triangle wave: sweep right, then back left
 	for (const r of SHIMMER_ROWS) {
-		if (r === ptab.selected) continue; // leave the selected/hover highlight alone
+		// The scanner runs on the selected row too: it only writes the bg, so the row keeps its
+		// selection fg and its highlight everywhere the sweeping band is not.
 		const y = r - cb + top;
 		if (y <= top || y >= ptab.abottom) continue;
 		const row = lines[y]; if (!row) continue;
