@@ -141,6 +141,14 @@ const AGENTS = [...new Set(RUNNERS.map((r) => r.harness))];
 const HARNESS_MODEL = {};
 for (const r of RUNNERS) if (!(r.harness in HARNESS_MODEL)) HARNESS_MODEL[r.harness] = r.model;
 const TOTAL_CAP = RUNNERS.reduce((s, r) => s + r.cap, 0);
+// A harness that hit a quota wall (rate-limit / overload) or hung to a spawn timeout is parked for a
+// cooldown, so the review panel stops handing tickets to a harness that will only 429 or hang again.
+// Cleared by time, not by success.
+const THROTTLE_COOLDOWN = Number(process.env.SWARM_THROTTLE_COOLDOWN_MS || 20 * 60 * 1000);
+const AGENT_TIMEOUT_MS = Number(process.env.SWARM_AGENT_TIMEOUT_MS || 15 * 60 * 1000);
+const throttledUntil = new Map();
+const isThrottled = (h) => (throttledUntil.get(h) || 0) > Date.now();
+const markThrottled = (h) => { throttledUntil.set(h, Date.now() + THROTTLE_COOLDOWN); console.log(`[quota] ${h} parked ${Math.round(THROTTLE_COOLDOWN / 60000)}m (rate-limited or hung)`); };
 // The order harnesses are tried for a ticket (fallback path only); also the escalation
 // order when one cannot land the change.
 const escalationOrder = (i) => AGENTS.map((_, k) => AGENTS[(i + k) % AGENTS.length]);
@@ -152,7 +160,7 @@ const authorFor = (i) => escalationOrder(i)[0];
 const BOT_PREFIX = process.env.OPENHARK_BOT_PREFIX || '';
 const botLogin = (a) => `${BOT_PREFIX}${a}`;
 const botKey = (login) => (BOT_PREFIX && String(login).startsWith(BOT_PREFIX) ? String(login).slice(BOT_PREFIX.length) : login);
-const panelOf = (author, prAuthorBot) => AGENTS.filter((a) => a !== author && botLogin(a) !== prAuthorBot);
+const panelOf = (author, prAuthorBot) => AGENTS.filter((a) => a !== author && botLogin(a) !== prAuthorBot && !isThrottled(a));
 
 // The one legitimate way to make no change: the deliverable already exists on main. An author or
 // reviser says so with a lone ALREADY-DONE: line, letting the coordinator record a deliberate no-op
@@ -256,7 +264,7 @@ function addressReviewPrompt(t, objection, allowDispute = false) {
 		ALREADY_DONE_CLAUSE,
 		``,
 		DISPUTE_PREMISE_CLAUSE,
-		...(allowDispute ? ['', DISPUTE_CLAUSE] : ['', `Do NOT argue with the review in prose; implement the requested changes.`]),
+		...(allowDispute ? ['', DISPUTE_CLAUSE] : ['', `No second agent can judge a dispute of this specific objection, so do not argue it in prose - fix it. But you are not required to keep revising an objection you cannot satisfy: if the reason you cannot is that the TICKET's premise is wrong (its approach contradicts how the code works, not merely that the fix is hard), stop and use DISPUTE-PREMISE above instead of spending revisions on it.`]),
 		``,
 		`--- reviewer's requested changes ---`,
 		objection.slice(0, 4000),
@@ -374,6 +382,12 @@ function revertMainLeak(tag) {
 	try { git(['checkout', '--', ...files], ROOT); } catch {}
 	console.error(`WARN: ${tag} leaked edits into the main checkout; reverted ${files.join(', ')}`);
 }
+// SIGKILL a process and all its descendants (a timed-out agent CLI leaves node grandchildren that
+// would otherwise orphan). Not detached, so a run-level kill of the coordinator's group still reaps.
+function killTree(pid) {
+	try { for (const k of execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).split('\n').map(Number).filter(Boolean)) killTree(k); } catch {}
+	try { process.kill(pid, 'SIGKILL'); } catch {}
+}
 function spawnAgent(bot, wt, prompt, env, onPid, tag) {
 	const [cmd, args, opts] = ROSTER[bot](wt, prompt, env && env._SWARM_MODEL);
 	// Capture the agent's output to a per-run log. Dashboard-launched runs are
@@ -387,7 +401,11 @@ function spawnAgent(bot, wt, prompt, env, onPid, tag) {
 	return new Promise((res, rej) => {
 		const p = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], ...opts, env: { ...env, ...(opts.env || {}) } });
 		if (onPid && p.pid) onPid(p.pid);
-		let tail = '';
+		let tail = '', timedOut = false;
+		// A throttled backend that accepts the process but never answers (0% CPU) would keep a review
+		// pending forever. Kill the agent's whole tree and let the caller treat it as a transient
+		// failure (which also parks the harness as throttled).
+		const killer = setTimeout(() => { timedOut = true; killTree(p.pid); }, AGENT_TIMEOUT_MS);
 		const cap = (d) => {
 			logStream.write(d);
 			tail = (tail + d).slice(-2000);
@@ -396,12 +414,15 @@ function spawnAgent(bot, wt, prompt, env, onPid, tag) {
 		p.stdout.on('data', cap);
 		p.stderr.on('data', cap);
 		p.on('exit', (code) => {
+			clearTimeout(killer);
 			logStream.end();
 			revertMainLeak(tag || bot);
+			if (timedOut) return rej(new Error(`${bot} timed out after ${Math.round(AGENT_TIMEOUT_MS / 60000)}m (log ${logPath})`));
 			if (code === 0) return res(tail); // the tail lets a caller read a verdict the agent printed
 			rej(new Error(`${bot} exited ${code} (log ${logPath}); tail: ${tail.slice(-400).replace(/\s+/g, ' ').trim()}`));
 		});
 		p.on('error', (e) => {
+			clearTimeout(killer);
 			logStream.end();
 			rej(e);
 		});
@@ -412,11 +433,14 @@ function spawnAgent(bot, wt, prompt, env, onPid, tag) {
 // of times before the caller escalates to a different agent. A real nonzero exit
 // whose output is not one of these is not retried; it escalates immediately.
 const TRANSIENT_FAIL = /timeout waiting for response|timed out|ETIMEDOUT|ECONNRESET|socket hang up|50[234]\b|overloaded|unavailable|deadline exceeded/i;
+// The subset that means the backend is out of budget, not the network hiccuped: park the harness.
+const QUOTA_FAIL = /overloaded|rate.?limit|\b429\b|\b529\b|resource_exhausted|quota|timed out|timeout waiting/i;
 async function spawnWithRetry(agent, wt, prompt, env, onPid, tag, retries = Number(process.env.SWARM_SPAWN_RETRIES || 2)) {
 	for (let i = 0; ; i++) {
 		try {
 			return await spawnAgent(agent, wt, prompt, env, onPid, i === 0 ? tag : `${tag}-retry${i}`);
 		} catch (e) {
+			if (QUOTA_FAIL.test(String(e.message))) markThrottled(agent);
 			if (i >= retries || !TRANSIENT_FAIL.test(String(e.message))) throw e;
 			console.log(`[${tag}] transient failure (${String(e.message).slice(0, 90)}); retry ${i + 1}/${retries}`);
 		}
@@ -661,10 +685,9 @@ async function selfReview(t, prNumber, author, wt, i, report, model) {
 }
 async function reviewPanel(t, prNumber, author, prAuthorBot, wt, i, report, authorModel) {
 	const skeptics = panelOf(author, prAuthorBot);
-	if (!skeptics.length) {
-		if (AGENTS.length === 1) return selfReview(t, prNumber, author, wt, i, report, authorModel);
-		return { approved: false, objection: 'no eligible reviewer left (roster too small after escalation)' };
-	}
+	// No eligible skeptic (solo roster, or the other harnesses are parked as throttled): a self-review
+	// the coordinator still gates beats blocking the ticket on nobody.
+	if (!skeptics.length) return selfReview(t, prNumber, author, wt, i, report, authorModel);
 	report('reviewing', `blocking panel: ${skeptics.join(', ')}`);
 	// Track which reviewers are live so the board shimmers each independently: a reviewer is added
 	// on spawn and removed when it finishes (posts or crashes), so one can stop before the other.

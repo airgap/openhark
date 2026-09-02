@@ -288,7 +288,9 @@ const readBody = (req) =>
 		});
 	});
 const forge = (args, env) =>
-	JSON.parse(execFileSync('node', [join(BIN_DIR, 'forge.mjs'), ...args], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ...secretEnv, ...env } }));
+	// Bounded: forge.mjs already times out its own fetch, but cap the synchronous child too so a
+	// wedged forge call can never freeze the dashboard's event loop indefinitely.
+	JSON.parse(execFileSync('node', [join(BIN_DIR, 'forge.mjs'), ...args], { cwd: ROOT, encoding: 'utf8', timeout: 20000, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, ...secretEnv, ...env } }));
 
 // Async capture so a slow planner call never blocks the poll loop.
 const capture = (cmd, args) =>
@@ -372,6 +374,29 @@ async function reconcileMergedTickets() {
 }
 setInterval(() => reconcileMergedTickets().catch(() => {}), 60000);
 setTimeout(() => reconcileMergedTickets().catch(() => {}), 8000); // once shortly after start
+
+// The open-PR list is on the hot path (/api/state, polled continuously by every TUI). Fetching it
+// with the SYNCHRONOUS forge() froze the event loop whenever the forge stalled, and with several TUIs
+// polling the loop never drained the accept queue. Fetch it in the background with a spawn (never
+// blocks the loop) and serve the cache; a stalled forge only makes the list go stale.
+let prsCache = { at: 0, data: [] };
+function forgeAsync(args, env) {
+	return new Promise((resolve, reject) => {
+		const p = spawn('node', [join(BIN_DIR, 'forge.mjs'), ...args], { cwd: ROOT, env: { ...process.env, ...secretEnv, ...env } });
+		let out = '', err = '';
+		const t = setTimeout(() => { try { p.kill('SIGKILL'); } catch {} reject(new Error('forge timeout')); }, 20000);
+		p.stdout.on('data', (d) => (out += d));
+		p.stderr.on('data', (d) => (err += d));
+		p.on('error', (e) => { clearTimeout(t); reject(e); });
+		p.on('close', (code) => { clearTimeout(t); if (code !== 0) return reject(new Error(err.slice(0, 300) || `exit ${code}`)); try { resolve(JSON.parse(out)); } catch (e2) { reject(e2); } });
+	});
+}
+async function refreshPrs() {
+	try { prsCache = { at: Date.now(), data: await forgeAsync(['list', '--state', 'open'], READ_AGENT ? { AGENT: READ_AGENT } : {}) }; }
+	catch (e) { prsCache = { at: prsCache.at, data: prsCache.data, error: String(e.message).slice(0, 200) }; }
+}
+setInterval(() => refreshPrs().catch(() => {}), 20000);
+setTimeout(() => refreshPrs().catch(() => {}), 2000);
 // Fable reasons over a list we hand it (scope inference + disjoint pick). When the
 // server can list directly, this avoids the LLM driving the flaky MCP itself
 // (the "select: timeout" the daemon hit); the MCP path is the fallback.
@@ -444,12 +469,7 @@ const server = createServer(async (req, res) => {
 		if (req.method === 'GET' && url.pathname === '/api/state') {
 			const run = boardRun();
 			if (run && run.tickets) run.tickets = withLiveness(run.tickets, run.runId);
-			let prs = [];
-			try {
-				prs = forge(['list', '--state', 'open'], READ_AGENT ? { AGENT: READ_AGENT } : {});
-			} catch (e) {
-				prs = { error: String(e.message).slice(0, 300) };
-			}
+			const prs = prsCache.data; // served from the background cache; never a blocking forge call on this path
 			const trackerStatus = { connected: tracker.capabilities.has('listBacklog'), exp: null };
 			return send(res, 200, { run, history: withLiveness(recentTickets(400)), prs, base: FORGE_WEB, repo: REPO_SLUG, killable: [...runs.keys()], tracker: trackerStatus, autobatch: { on: autobatch.on, mode: autobatch.mode, msg: autobatch.msg }, swarm: { runners: swarm.runners, total: totalCap() }, harnessMeta, harnessQuota: harnessQuota() });
 		}

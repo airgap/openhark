@@ -25,6 +25,7 @@ async function call(method, path, body) {
 		method,
 		headers: { Authorization: `token ${token()}`, 'Content-Type': 'application/json', Accept: 'application/json' },
 		body: body ? JSON.stringify(body) : undefined,
+		signal: AbortSignal.timeout(15000), // a stalled forge connection must abort, never hang forever
 	});
 	const text = await res.text();
 	if (!res.ok) throw new Error(`${method} ${path} -> ${res.status}: ${text.slice(0, 400)}`);
