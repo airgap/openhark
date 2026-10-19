@@ -53,6 +53,13 @@ Everything is environment-driven. The essentials:
 | `OPENHARK_TRACKER`  | `github` (default), `jira`, `asana`, or `custom`.                       |
 | `OPENHARK_TOKEN` / `DASH_TOKEN` | Break-glass token for the dashboard API (auto-minted if unset). |
 
+The gate fails closed: when `OPENHARK_GATE` is unset or empty, it runs `npm test`
+only if the target repo defines a nonempty test script. If neither check exists,
+authoring and the final merge re-gate fail and the PR cannot merge. A configured
+command takes precedence over `npm test`; its nonzero exit fails the gate without
+falling back. Whitespace-only commands are rejected. Configure a real check for
+repos without an npm test script; there is no implicit no-op approval.
+
 **Forge (GitHub):** `GITHUB_REPO=owner/repo` (else parsed from the target repo's
 origin), and either `GITHUB_TOKEN` or an authenticated `gh` CLI. Real cross-review
 needs a **distinct identity per reviewer**: set `GIT_PAT_<AGENT>` per agent (e.g.

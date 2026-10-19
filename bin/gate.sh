@@ -7,6 +7,10 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 if [ -n "${OPENHARK_GATE:-}" ]; then
+	if [[ ! "$OPENHARK_GATE" =~ [^[:space:]] ]]; then
+		echo "gate: FAIL OPENHARK_GATE must contain a check command" >&2
+		exit 1
+	fi
 	echo "gate: running OPENHARK_GATE"
 	bash -c "$OPENHARK_GATE"
 	echo "gate: PASS"
@@ -14,12 +18,12 @@ if [ -n "${OPENHARK_GATE:-}" ]; then
 fi
 
 # Fall back to `npm test` when the repo defines a test script, so a Node project works out of the box.
-if [ -f package.json ] && node -e 'process.exit(require("./package.json").scripts&&require("./package.json").scripts.test?0:1)' 2>/dev/null; then
+if [ -f package.json ] && node -e 'const test = require("./package.json").scripts?.test; process.exit(typeof test === "string" && test.trim() ? 0 : 1)' 2>/dev/null; then
 	echo "gate: running npm test (set OPENHARK_GATE to override)"
 	npm test
 	echo "gate: PASS"
 	exit 0
 fi
 
-echo "gate: WARNING no gate configured; set OPENHARK_GATE to a real check. Passing by default." >&2
-echo "gate: PASS (no-op)"
+echo "gate: FAIL no check configured; set OPENHARK_GATE to a real check or define an npm test script" >&2
+exit 1
