@@ -9,6 +9,7 @@
     "openhark-serve": "bin/dashboard.mjs"
   },
   "scripts": {
+    "test": "node --test",
     "serve": "node bin/dashboard.mjs",
     "tui": "node bin/tui/index.mjs",
     "mcp": "node bin/mcp.mjs"

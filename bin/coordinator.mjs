@@ -28,6 +28,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { startRun, emit as stateEmit, getRun, latestUnfinishedRunId } from './swarm-state.mjs';
 import { STATE_DIR, ensureStateDir, targetRoot, BIN_DIR } from './env.mjs';
+import { runGateCapture } from './gate.mjs';
 
 // ROOT is the TARGET repo (the one whose worktrees agents work in); BIN_DIR is openhark's own
 // scripts, so the coordinator can invoke its siblings (worktree.mjs, forge.mjs, gate.sh) by absolute
@@ -455,16 +456,6 @@ function simEdit(wt, t) {
 	writeFileSync(join(dir, `${t.id}.md`), `sim edit for ${t.id}: ${t.title}\n`);
 }
 
-// Run the gate WITHOUT throwing, capturing its output so a red gate can be handed
-// back to the author. execFileSync throws on non-zero; the output is on the error.
-function runGateCapture(wt, env) {
-	try {
-		const out = execFileSync('bash', [join(BIN_DIR, 'gate.sh')], { cwd: wt, env, encoding: 'utf8', maxBuffer: MAXBUF });
-		return { ok: true, output: out };
-	} catch (e) {
-		return { ok: false, output: `${e.stdout || ''}\n${e.stderr || ''}`.trim() };
-	}
-}
 // The tail of a captured agent log, so a skip/failure can quote the agent's own
 // last words instead of a bare status.
 function readLogTail(tag) {
